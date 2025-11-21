@@ -15,7 +15,7 @@ export default function History({ onLoadSummary }) {
     load();
   }, []);
 
-  async function loadEntry(entry) {
+  async function loadEntry() {
     const summary = await getSummaryMock("/sample_summary_api_payload.json");
     onLoadSummary(summary);
   }
