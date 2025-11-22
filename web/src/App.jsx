@@ -1,45 +1,51 @@
-import React, { useState } from "react";
+// web/src/App.jsx
+import React, { useContext, useState } from "react";
+import { AuthContext } from "./AuthContext";
 import Login from "./components/Login";
 import Upload from "./components/Upload";
 import DataTable from "./components/DataTable";
 import ChartCard from "./components/ChartCard";
 import History from "./components/History";
 
-
 export default function App() {
-  const [token, setToken] = useState(localStorage.getItem("token") || null);
+  const { token, logout } = useContext(AuthContext);
   const [summary, setSummary] = useState(null);
 
-  function handleLogin(token) {
-    setToken(token);
-    localStorage.setItem("token", token);
-  }
-
-  function handleLogout() {
-    setToken(null);
-    localStorage.removeItem("token");
-    setSummary(null);
-  }
-
   return (
-    <div style={{padding:20, fontFamily: "Inter, Arial, sans-serif"}}>
-      <header style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20}}>
+    <div style={{ padding: 20, fontFamily: "Inter, Arial, sans-serif" }}>
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 20,
+        }}
+      >
         <h2>Chemical Equipment Parameter Visualizer — Web (Demo)</h2>
-        {token ? <button onClick={handleLogout}>Logout</button> : null}
+        {token ? (
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ fontSize: 13, color: "#444", alignSelf: "center" }}>
+              Authenticated
+            </div>
+            <button onClick={logout}>Logout</button>
+          </div>
+        ) : null}
       </header>
 
       {!token ? (
-        <Login onLogin={handleLogin} />
+        <Login />
       ) : (
-        <main style={{display:"grid", gridTemplateColumns:"1fr 420px", gap:16}}>
+        <main
+          style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 16 }}
+        >
           <section>
             <Upload onSummary={(s) => setSummary(s)} />
-            <div style={{marginTop:16}}>
+            <div style={{ marginTop: 16 }}>
               <h3>Data Preview / Summary</h3>
               {summary ? (
                 <>
                   <DataTable preview={summary.raw_preview || []} />
-                  <div style={{display:"flex", gap:12, marginTop:12}}>
+                  <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
                     <ChartCard summary={summary} />
                   </div>
                 </>
@@ -51,7 +57,7 @@ export default function App() {
 
           <aside>
             <History onLoadSummary={(s) => setSummary(s)} />
-            <div style={{marginTop:16}}>
+            <div style={{ marginTop: 16 }}>
               <h4>Actions</h4>
               <button
                 onClick={() => {

@@ -1,3 +1,4 @@
+// web/src/AuthContext.jsx
 import React, { createContext, useState, useEffect } from "react";
 import { setAuthToken } from "./api/client";
 
@@ -5,7 +6,12 @@ export const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(localStorage.getItem("token") || null);
-  useEffect(() => setAuthToken(token), [token]);
+
+  // whenever token changes, update axios and persist
+  useEffect(() => {
+    setAuthToken(token);
+  }, [token]);
+
   function loginWithToken(t) {
     localStorage.setItem("token", t);
     setToken(t);
