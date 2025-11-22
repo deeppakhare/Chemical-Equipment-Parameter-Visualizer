@@ -23,9 +23,9 @@ from table_model import DataFrameModel
 # ----------------------
 # Local sample files (you uploaded these earlier)
 # ----------------------
-SAMPLE_CSV_PATH = "/mnt/data/sample_equipment_data.csv"
-SAMPLE_SUMMARY_JSON = "/mnt/data/sample_summary_api_payload.json"
-SAMPLE_PDF = None  # e.g. "/mnt/data/sample_report.pdf" or place PDF in desktop/ and set path
+PROJECT_ROOT = Path(__file__).resolve().parents[1]  # desktop -> project root
+SAMPLE_CSV_PATH = PROJECT_ROOT / "samples" / "sample_equipment_data.csv"
+SAMPLE_SUMMARY_JSON = PROJECT_ROOT / "samples" / "sample_summary_api_payload.json"  # e.g. "/mnt/data/sample_report.pdf" or place PDF in desktop/ and set path
 
 # ----------------------
 # Mock API layer (for frontend dev). Replace with real requests calls later.

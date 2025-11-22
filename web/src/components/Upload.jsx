@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { uploadMock, getSummaryMock } from "../api/mockServer";
 import Papa from "papaparse";
+import client from "../api/client";
 
 export default function Upload({ onSummary }) {
   const [file, setFile] = useState(null);
@@ -40,6 +41,13 @@ export default function Upload({ onSummary }) {
       setLoading(false);
     }
   }
+
+  async function uploadFile(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const resp = await client.post("/api/datasets/upload/", fd, { headers: { "Content-Type": "multipart/form-data" }});
+  return resp.data; // { dataset_id, summary_url, history_url }
+}
 
   return (
     <div style={{border:"1px solid #e2e8f0", padding:12, borderRadius:8}}>

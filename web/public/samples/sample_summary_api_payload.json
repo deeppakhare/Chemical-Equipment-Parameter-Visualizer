@@ -1,0 +1,15 @@
+{
+  "dataset_id": "sample_equipment_data.csv",
+  "rows": 15,
+  "columns": ["ID","Flowrate","Pressure","Temperature","Note"],
+  "numeric_columns": ["Flowrate", "Pressure", "Temperature"],
+  "summary": {
+    "Flowrate": {"count": 15, "mean": 10.5, "median": 10.0, "std": 1.2, "min": 8.5, "max": 12.3},
+    "Pressure": {"count": 15, "mean": 2.3, "median": 2.2, "std": 0.4, "min": 1.9, "max": 3.0},
+    "Temperature": {"count": 15, "mean": 45.0, "median": 45.0, "std": 2.5, "min": 40.0, "max": 49.0}
+  },
+  "raw_preview": [
+    {"ID":1,"Flowrate":10,"Pressure":2.1,"Temperature":44,"Note":"OK"},
+    {"ID":2,"Flowrate":11,"Pressure":2.2,"Temperature":45,"Note":"OK"}
+  ]
+}

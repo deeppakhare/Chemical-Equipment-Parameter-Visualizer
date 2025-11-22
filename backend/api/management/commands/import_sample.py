@@ -4,11 +4,14 @@ from django.contrib.auth import get_user_model
 from api.models import Dataset
 from django.core.files import File
 from django.conf import settings
+from pathlib import Path
 import os
 
 User = get_user_model()
 
-SAMPLE_PATH = "/mnt/data/sample_equipment_data.csv"  # <-- using your uploaded file path
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+SAMPLE_PATH = PROJECT_ROOT / "samples" / "sample_equipment_data.csv"
+SUMMARY_JSON_PATH = PROJECT_ROOT / "samples" / "sample_summary_api_payload.json" # <-- using your uploaded file path
 
 class Command(BaseCommand):
     help = "Import the provided sample CSV as a dataset for the given username (create user if missing)."

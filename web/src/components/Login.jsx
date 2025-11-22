@@ -1,7 +1,9 @@
-import React, { useState } from "react";
-import { loginMock } from "../api/mockServer";
+import React, { useState, useContext } from "react";
+import client from "../api/client";
+import { AuthContext } from "../AuthContext";
 
-export default function Login({ onLogin }) {
+export default function Login() {
+  const { loginWithToken } = useContext(AuthContext);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -10,11 +12,15 @@ export default function Login({ onLogin }) {
     e.preventDefault();
     setBusy(true);
     try {
-      const res = await loginMock(username, password);
-      onLogin(res.token);
+      // DRF obtain_auth_token expects form-encoded or JSON; we'll send JSON
+      const res = await client.post("/api-token-auth/", { username, password });
+      const token = res.data.token;
+      if (!token) throw new Error("No token returned");
+      loginWithToken(token);
+      alert("Logged in (token saved).");
     } catch (err) {
       console.error(err);
-      alert("Login failed (mock)");
+      alert("Login failed");
     } finally {
       setBusy(false);
     }
@@ -22,30 +28,9 @@ export default function Login({ onLogin }) {
 
   return (
     <form onSubmit={submit} style={{maxWidth:420}}>
-      <h3>Sign in (mock)</h3>
-      <div style={{marginBottom:8}}>
-        <input
-          placeholder="username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-          style={{width:"100%", padding:8}}
-        />
-      </div>
-      <div style={{marginBottom:8}}>
-        <input
-          placeholder="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          type="password"
-          required
-          style={{width:"100%", padding:8}}
-        />
-      </div>
-      <button type="submit" disabled={busy} style={{padding:"8px 12px"}}>
-        {busy ? "Signing in…" : "Sign in"}
-      </button>
-      <p style={{fontSize:12, color:"#666"}}>This is a mock login for frontend development.</p>
+      <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username" required />
+      <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" type="password" required />
+      <button type="submit" disabled={busy}>{busy ? "Logging in..." : "Login"}</button>
     </form>
   );
 }

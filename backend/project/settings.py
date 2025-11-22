@@ -4,6 +4,9 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent  # if settings.py is in backend/project/settings.py
+SAMPLES_DIR = REPO_ROOT / "samples"
+
 SECRET_KEY = "change-this-for-prod"
 
 DEBUG = True
@@ -20,6 +23,7 @@ INSTALLED_APPS = [
 
     # third-party
     "rest_framework",
+    "rest_framework.authtoken",
     "corsheaders",
 
     # local

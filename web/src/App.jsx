@@ -5,6 +5,7 @@ import DataTable from "./components/DataTable";
 import ChartCard from "./components/ChartCard";
 import History from "./components/History";
 
+
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem("token") || null);
   const [summary, setSummary] = useState(null);

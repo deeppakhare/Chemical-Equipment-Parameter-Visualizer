@@ -20,7 +20,7 @@ class ApiSmokeTests(TestCase):
 
     def test_upload_and_summary(self):
         # use sample file from /mnt/data if available
-        sample = "/mnt/data/sample_equipment_data.csv"
+        sample = "samples/sample_equipment_data.csv"
         if os.path.exists(sample):
             with open(sample, "rb") as f:
                 resp = self.client.post(reverse("upload-dataset"), {"file": f}, format="multipart")
