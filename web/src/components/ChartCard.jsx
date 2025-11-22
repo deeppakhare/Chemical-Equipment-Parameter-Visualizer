@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Chart as ChartJS,
   LineElement,
@@ -14,30 +14,32 @@ import { Line } from "react-chartjs-2";
 ChartJS.register(LineElement, PointElement, LinearScale, Title, CategoryScale, Tooltip, Legend);
 
 export default function ChartCard({ summary }) {
-  const numeric = summary?.numeric_columns || [];
-  const preview = summary?.raw_preview || [];
+  // memoized derived values
+  const numeric = useMemo(() => summary?.numeric_columns || [], [summary]);
+  const preview = useMemo(() => summary?.raw_preview || [], [summary]);
 
-  // FIX 1: use undefined instead of null
-  const [yCol, setYCol] = useState(undefined);
+  // pick yCol directly, without useEffect
+  const defaultY = numeric.length ? numeric[0] : null;
+  const [yCol, setYCol] = useState(defaultY);
 
-  useEffect(() => {
+  // when summary changes, reset yCol safely
+  React.useEffect(() => {
     if (numeric.length) setYCol(numeric[0]);
   }, [numeric]);
 
-  const labels = useMemo(() => (
-    preview.length
-      ? preview.map((r, i) => i + 1)
-      : Array.from({ length: summary?.rows || 10 }, (_, i) => i + 1)
-  ), [preview, summary]);
+  const labels = useMemo(() => {
+    if (preview.length) return preview.map((_, idx) => idx + 1);
+    const count = summary?.rows || 10;
+    return Array.from({ length: count }, (_, i) => i + 1);
+  }, [preview, summary]);
 
   const data = useMemo(() => {
     if (!yCol) return { labels: [], datasets: [] };
-    const values =
-      preview.length
-        ? preview.map((r) => Number(r[yCol] ?? NaN))
-        : Array.from({ length: summary?.rows || 10 }, () =>
-            summary?.summary?.[yCol]?.mean ?? 0
-          );
+
+    const values = preview.length
+      ? preview.map((row) => Number(row[yCol] ?? NaN))
+      : Array.from({ length: summary?.rows || 10 }, () => summary?.summary?.[yCol]?.mean ?? 0);
+
     return {
       labels,
       datasets: [
@@ -51,17 +53,18 @@ export default function ChartCard({ summary }) {
     };
   }, [yCol, preview, labels, summary]);
 
-  // FIX 2: only show message when no numeric columns exist
-  if (!numeric.length) return <p>No numeric columns available to chart.</p>;
-  if (!yCol) return null; // wait for useEffect
+  if (!numeric.length) return <p>No numeric columns available.</p>;
+  if (!yCol) return null;
 
   return (
     <div style={{ border: "1px solid #e6eef8", padding: 12, borderRadius: 8, width: "100%" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h4 style={{ margin: 0 }}>Chart — {yCol}</h4>
         <select value={yCol} onChange={(e) => setYCol(e.target.value)}>
-          {numeric.map((n) => (
-            <option key={n} value={n}>{n}</option>
+          {numeric.map((col) => (
+            <option key={col} value={col}>
+              {col}
+            </option>
           ))}
         </select>
       </div>
@@ -69,7 +72,7 @@ export default function ChartCard({ summary }) {
         <Line data={data} />
       </div>
       <div style={{ marginTop: 8 }}>
-        <small>Tip: pick different numeric columns from dropdown.</small>
+        <small>Pick different columns from dropdown.</small>
       </div>
     </div>
   );

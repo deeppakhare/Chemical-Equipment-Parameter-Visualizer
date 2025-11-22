@@ -16,7 +16,7 @@ export async function loginMock(username, password) {
   try {
     const res = await client.post("/api-token-auth/", { username, password });
     return { token: res.data.token };
-  } catch (err) {
+  } catch  {
     // fallback fake token for offline dev
     await new Promise((r) => setTimeout(r, 300));
     return { token: "fake-token-offline" };
