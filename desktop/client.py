@@ -8,6 +8,9 @@ from pathlib import Path
 
 import pandas as pd
 import requests  # used when switching to real backend
+
+API_BASE = "http://localhost:8000"
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QTabWidget, QLineEdit, QMessageBox,
@@ -26,6 +29,8 @@ from table_model import DataFrameModel
 PROJECT_ROOT = Path(__file__).resolve().parents[1]  # desktop -> project root
 SAMPLE_CSV_PATH = PROJECT_ROOT / "samples" / "sample_equipment_data.csv"
 SAMPLE_SUMMARY_JSON = PROJECT_ROOT / "samples" / "sample_summary_api_payload.json"  # e.g. "/mnt/data/sample_report.pdf" or place PDF in desktop/ and set path
+SAMPLE_PDF = PROJECT_ROOT / "samples" / "sample_report.pdf"
+
 
 # ----------------------
 # Mock API layer (for frontend dev). Replace with real requests calls later.
