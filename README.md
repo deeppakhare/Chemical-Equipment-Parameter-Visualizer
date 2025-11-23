@@ -125,3 +125,52 @@ This project includes:
 ## 📧 Author
 Deep Pakhare <br/>
 Chemical Equipment Parameter Visualizer (Web + Desktop)
+
+---
+
+## 📸 **Screenshots of Desktop**
+
+### 🔐 **Login Screen**
+<img src="screenshots/login_page01.png" width="650"/>
+
+---
+
+### 📤 **CSV Upload + Last 5 History CSV**
+<img src="screenshots/upload_preview01.png" width="650"/>
+
+---
+
+### 📊 **Interactive Chart View**
+<img src="screenshots/chart_view01.png" width="650"/>
+
+---
+
+### 📄 **Generated PDF Report**
+<img src="screenshots/pdf_report01.png" width="650"/>
+
+---
+
+---
+
+## 📸 **Screenshots of Web**
+
+### 🔐 **Login Screen**
+<img src="screenshots/login_page.png" width="650"/>
+
+---
+
+### 📤 **CSV Upload + Full Preview**
+<img src="screenshots/upload_preview.png" width="650"/>
+
+---
+
+### 📊 **Interactive Chart View**
+<img src="screenshots/chart_view.png" width="650"/>
+
+---
+
+### 📄 **Generated PDF Report**
+<img src="screenshots/pdf_report.png" width="650"/>
+
+---
+
