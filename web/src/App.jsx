@@ -6,6 +6,7 @@ import Upload from "./components/Upload";
 import DataTable from "./components/DataTable";
 import ChartCard from "./components/ChartCard";
 import History from "./components/History";
+import { downloadDatasetReport } from "./api/reports";
 
 export default function App() {
   const { token, logout } = useContext(AuthContext);
@@ -60,16 +61,22 @@ export default function App() {
             <div style={{ marginTop: 16 }}>
               <h4>Actions</h4>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (!summary) return alert("Load a dataset first");
-                  // Mock "generate report" - download a sample PDF stored in public/
-                  const a = document.createElement("a");
-                  a.href = "/sample_report.pdf";
-                  a.download = `${summary.dataset_id || "report"}.pdf`;
-                  a.click();
+                  // Prefer numeric id field if available; otherwise pass dataset_id (which may be filename)
+                  const candidate =
+                    summary.id ||
+                    summary.dataset_id ||
+                    summary.original_filename;
+                  try {
+                    await downloadDatasetReport(candidate);
+                  } catch (err) {
+                    console.error(err);
+                    alert("Failed to download report: " + (err.message || err));
+                  }
                 }}
               >
-                Generate / Download Report (mock)
+                Generate / Download Report
               </button>
             </div>
           </aside>
