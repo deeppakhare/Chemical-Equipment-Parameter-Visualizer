@@ -13,9 +13,9 @@ matplotlib.use("Qt5Agg")
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QFileDialog, QTabWidget, QLineEdit, QMessageBox, QTableView,
-    QComboBox, QProgressBar, QCheckBox
+    QComboBox, QProgressBar, QCheckBox, QFrame, QSizePolicy, QSpacerItem
 )
-from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal, QSize
 
 import pandas as pd
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -30,13 +30,12 @@ from auth import load_cached_token, save_token, clear_cached_token
 
 # Project sample locations (relative to repo root)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-# default sample (the file you uploaded earlier)
-SAMPLE_CSV_PATH = Path("../samples/sample_equipment_data.csv")
+SAMPLE_CSV_PATH = PROJECT_ROOT / "samples" / "sample_equipment_data.csv"
 SAMPLE_SUMMARY_JSON = PROJECT_ROOT / "samples" / "sample_summary_api_payload.json"
 SAMPLE_PDF = PROJECT_ROOT / "samples" / "sample_report.pdf"
 
 # -----------------------
-# Worker & threading helpers
+# Worker & threading helpers (same robust approach)
 # -----------------------
 class WorkerSignals(QObject):
     finished = pyqtSignal(object)   # result
@@ -59,27 +58,22 @@ class Worker(QObject):
             self.signals.error.emit(e)
 
 def run_in_thread(fn, on_done=None, on_error=None, *args, **kwargs):
-    """
-    Run fn in a QThread non-blockingly.
-    - on_done(result) and on_error(exc) are called on the main thread.
-    - Returns the QThread instance (caller should keep a reference).
-    """
     thread = QThread()
     worker = Worker(fn, *args, **kwargs)
     worker.moveToThread(thread)
 
-    def handle_done(result):
+    def _finished_slot(result):
         if on_done:
             try:
                 on_done(result)
             except Exception as e:
                 print("Error in on_done callback:", e)
         try:
-            thread.quit()  # request thread to stop; do NOT wait here
+            thread.quit()
         except Exception:
             pass
 
-    def handle_error(exc):
+    def _error_slot(exc):
         if on_error:
             try:
                 on_error(exc)
@@ -90,8 +84,7 @@ def run_in_thread(fn, on_done=None, on_error=None, *args, **kwargs):
         except Exception:
             pass
 
-    def cleanup():
-        # executed when thread finishes (non-blocking)
+    def _cleanup():
         try:
             worker.deleteLater()
         except Exception:
@@ -101,26 +94,21 @@ def run_in_thread(fn, on_done=None, on_error=None, *args, **kwargs):
         except Exception:
             pass
 
-    worker.signals.finished.connect(handle_done)
-    worker.signals.error.connect(handle_error)
+    worker.signals.finished.connect(_finished_slot)
+    worker.signals.error.connect(_error_slot)
     thread.started.connect(worker.run)
-    thread.finished.connect(cleanup)
+    thread.finished.connect(_cleanup)
 
     thread.start()
     return thread
 
-# -----------------------
-# CSV reading helper to run inside worker
-# -----------------------
 def _read_csv_sync(path):
-    # This runs inside a background thread
     import pandas as pd
-    # Use a simple read_csv; caller will .head() for preview
     df = pd.read_csv(path)
     return df
 
 # -----------------------
-# Login widget
+# Login widget (unchanged logic)
 # -----------------------
 class LoginWidget(QWidget):
     def __init__(self, on_login):
@@ -185,72 +173,131 @@ class LoginWidget(QWidget):
 class MainWindow(QWidget):
     def __init__(self, user):
         super().__init__()
-        # keep references to threads so they are not GC'd
         self.threads = []
         self.user = user
         self.token = user.get("token")
         set_token(self.token)
         self.setWindowTitle(f"Equipment Visualizer — Desktop — {user.get('user')}")
-        self.resize(1000, 700)
+        self.resize(1100, 720)
         self.current_df = None
         self.current_summary = None
         self._create_ui()
+        self.apply_styles()
+
+    def apply_styles(self):
+        # Basic theme matching web: soft cards, rounded buttons, readable font
+        qss = """
+        QWidget {
+          background: #f8fafc;
+          font-family: Inter, Arial, sans-serif;
+          color: #0f172a;
+          font-size: 13px;
+        }
+        QFrame#card {
+          background: white;
+          border-radius: 10px;
+          border: 1px solid #e6eef8;
+          padding: 10px;
+        }
+        QPushButton {
+          background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #5b8def, stop:1 #3f6ef5);
+          color: white;
+          padding: 8px 12px;
+          border-radius: 8px;
+          border: none;
+          min-height: 28px;
+        }
+        QPushButton[secondary="true"] {
+          background: transparent;
+          color: #1f2937;
+          border: 1px solid #d1d5db;
+        }
+        QPushButton:disabled { opacity: 0.6; }
+        QLabel#muted { color: #6b7280; font-size:12px; }
+        QTableView {
+          background: white;
+          gridline-color: #f3f4f6;
+        }
+        QProgressBar { height: 10px; border-radius: 5px; }
+        """
+        self.setStyleSheet(qss)
 
     def _create_ui(self):
-        layout = QVBoxLayout()
+        root = QVBoxLayout()
 
-        # top actions
+        # Top action row
         top_bar = QHBoxLayout()
+        top_bar.setSpacing(12)
         self.lbl_file = QLabel("No file loaded")
+        self.lbl_file.setObjectName("muted")
         btn_choose = QPushButton("Choose CSV")
+        btn_choose.setProperty("secondary", True)
         btn_choose.clicked.connect(self.choose_file)
         btn_load_sample = QPushButton("Load sample CSV")
+        btn_load_sample.setProperty("secondary", True)
         btn_load_sample.clicked.connect(self.load_sample_csv)
-        btn_upload = QPushButton("Upload (to backend)")
+        btn_upload = QPushButton("Upload")
         btn_upload.clicked.connect(self.upload_current_file)
         btn_report = QPushButton("Generate / Open Report")
         btn_report.clicked.connect(self.generate_report)
-        top_bar.addWidget(self.lbl_file)
+        top_bar.addWidget(self.lbl_file, stretch=1)
         top_bar.addWidget(btn_choose)
         top_bar.addWidget(btn_load_sample)
         top_bar.addWidget(btn_upload)
         top_bar.addWidget(btn_report)
-        layout.addLayout(top_bar)
+        root.addLayout(top_bar)
 
-        # progress
+        # KPI / info row (card)
+        kpi_card = QFrame()
+        kpi_card.setObjectName("card")
+        kpi_layout = QHBoxLayout()
+        kpi_layout.setSpacing(24)
+
+        # KPI widgets
+        self.kpi_dataset = QLabel("Dataset: —")
+        self.kpi_rows = QLabel("Rows: —")
+        self.kpi_cols = QLabel("Columns: —")
+        self.kpi_numeric = QLabel("Numeric: —")
+        for lbl in (self.kpi_dataset, self.kpi_rows, self.kpi_cols, self.kpi_numeric):
+            lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+            lbl.setMinimumWidth(120)
+            # subtle muted label under value would be nicer but keep simple
+            kpi_layout.addWidget(lbl)
+
+        kpi_layout.addItem(QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
+        kpi_card.setLayout(kpi_layout)
+        root.addWidget(kpi_card)
+
+        # progress bar
         self.progress = QProgressBar()
         self.progress.setVisible(False)
-        layout.addWidget(self.progress)
+        root.addWidget(self.progress)
 
-        # tabs
-        self.tabs = QTabWidget()
-        self.tab_preview = QWidget()
-        self.tab_chart = QWidget()
-        self.tab_history = QWidget()
+        # main content split: left preview & upload, right history & actions
+        main_h = QHBoxLayout()
+        left_col = QVBoxLayout()
+        right_col = QVBoxLayout()
+        left_col.setSpacing(12)
+        right_col.setSpacing(12)
 
-        self._init_preview_tab()
-        self._init_chart_tab()
-        self._init_history_tab()
-
-        self.tabs.addTab(self.tab_preview, "Preview")
-        self.tabs.addTab(self.tab_chart, "Chart")
-        self.tabs.addTab(self.tab_history, "History")
-
-        layout.addWidget(self.tabs)
-        self.setLayout(layout)
-
-    # preview tab
-    def _init_preview_tab(self):
-        v = QVBoxLayout()
+        # Upload + preview card
+        upload_card = QFrame()
+        upload_card.setObjectName("card")
+        upload_layout = QVBoxLayout()
+        upload_layout.setSpacing(8)
+        # File chooser + preview component are separate; reuse your Upload logic visually
         self.table_view = QTableView()
         self.table_model = DataFrameModel()
         self.table_view.setModel(self.table_model)
-        v.addWidget(self.table_view)
-        self.tab_preview.setLayout(v)
+        upload_layout.addWidget(QLabel("<b>Data Preview</b>"))
+        upload_layout.addWidget(self.table_view)
+        upload_card.setLayout(upload_layout)
+        left_col.addWidget(upload_card, stretch=1)
 
-    # chart tab
-    def _init_chart_tab(self):
-        v = QVBoxLayout()
+        # Chart card
+        chart_card = QFrame()
+        chart_card.setObjectName("card")
+        chart_layout = QVBoxLayout()
         controls = QHBoxLayout()
         controls.addWidget(QLabel("Y column:"))
         self.combo_y = QComboBox()
@@ -258,44 +305,70 @@ class MainWindow(QWidget):
         btn_plot = QPushButton("Plot")
         btn_plot.clicked.connect(self.plot_selected_column)
         controls.addWidget(btn_plot)
-        v.addLayout(controls)
-
-        # Matplotlib canvas: give parent and keep on main thread
-        self.figure = Figure(figsize=(6, 4))
+        chart_layout.addLayout(controls)
+        self.figure = Figure(figsize=(6, 3))
         self.canvas = FigureCanvas(self.figure)
-        self.canvas.setParent(self)
-        v.addWidget(self.canvas)
-        self.tab_chart.setLayout(v)
+        chart_layout.addWidget(self.canvas)
+        chart_card.setLayout(chart_layout)
+        left_col.addWidget(chart_card, stretch=0)
 
-    # history tab
-    def _init_history_tab(self):
-        v = QVBoxLayout()
+        # History & actions card on right
+        history_card = QFrame()
+        history_card.setObjectName("card")
+        history_layout = QVBoxLayout()
+        history_layout.addWidget(QLabel("<b>History</b>"))
         self.history_label = QLabel("Loading history...")
-        v.addWidget(self.history_label)
+        history_layout.addWidget(self.history_label)
         self.history_container = QVBoxLayout()
-        v.addLayout(self.history_container)
-        self.tab_history.setLayout(v)
+        history_layout.addLayout(self.history_container)
+        history_card.setLayout(history_layout)
+        right_col.addWidget(history_card)
+
+        # action card (download, KPIs)
+        action_card = QFrame()
+        action_card.setObjectName("card")
+        action_layout = QVBoxLayout()
+        action_layout.addWidget(QLabel("<b>Actions</b>"))
+        # reuse report button as well
+        btn_report2 = QPushButton("Generate / Download Report")
+        btn_report2.clicked.connect(self.generate_report)
+        action_layout.addWidget(btn_report2)
+        action_card.setLayout(action_layout)
+        right_col.addWidget(action_card)
+
+        # assemble columns
+        main_h.addLayout(left_col, stretch=3)
+        main_h.addLayout(right_col, stretch=1)
+
+        root.addLayout(main_h)
+        self.setLayout(root)
+
+        # initialize: load history and set current empty preview
+        self._init_after_ui()
+
+    def _init_after_ui(self):
+        # If sample exists, pre-populate small preview (but don't auto-login)
+        if SAMPLE_CSV_PATH.exists():
+            # do not block — load later on demand
+            pass
         self.load_history()
 
-    # helper to start threads and keep references; remove on finished
+    # helper to start threads and track refs
     def _start_thread(self, fn, on_done=None, on_error=None, *args):
         th = run_in_thread(fn, on_done, on_error, *args)
         self.threads.append(th)
-        # remove reference on finished so it can be GC'd later
-        def _try_remove():
-            try:
-                if th in self.threads:
-                    self.threads.remove(th)
-            except Exception:
-                pass
-        # connect removal to finished signal (thread may not have attribute 'finished' publicly,
-        # but QThread has finished signal we can connect)
         try:
-            th.finished.connect(_try_remove)
+            th.finished.connect(lambda: self._try_remove_thread(th))
         except Exception:
-            # if connection fails, ignore (we still keep the reference for safety)
             pass
         return th
+
+    def _try_remove_thread(self, th):
+        try:
+            if th in self.threads:
+                self.threads.remove(th)
+        except Exception:
+            pass
 
     # -----------------
     # History
@@ -325,16 +398,13 @@ class MainWindow(QWidget):
             hbox = QHBoxLayout()
             lbl = QLabel(f"{entry.get('dataset_id')}  ({entry.get('rows')} rows)")
             btn_load = QPushButton("Load")
+            btn_load.setProperty("secondary", True)
             btn_load.clicked.connect(lambda checked, e=entry: self.load_history_entry(e))
             hbox.addWidget(lbl)
             hbox.addWidget(btn_load)
             self.history_container.addLayout(hbox)
 
     def load_history_entry(self, entry):
-        """
-        Safely load a history entry's summary. Normalizes fallback keys and prevents
-        calling the API with None.
-        """
         self.progress.setVisible(True)
         self.progress.setValue(10)
 
@@ -347,36 +417,16 @@ class MainWindow(QWidget):
             self.progress.setVisible(False)
             QMessageBox.critical(self, "Summary error", f"{str(exc)}\n\n{getattr(exc,'_traceback','')}")
 
-        # prefer numeric id if exists
-        ds = entry.get("dataset_id") or entry.get("id") or entry.get("original_filename") or entry.get("filename")
-
-        # if ds is 'unknown' or None, show message and abort
+        ds = entry.get("dataset_id") or entry.get("id") or entry.get("original_filename")
         if not ds or ds == "unknown":
             QMessageBox.warning(self, "Cannot load", "This history entry does not contain a usable dataset id.")
             self.progress.setVisible(False)
             return
 
-        # If ds looks like a filename (ends with .csv) we might instead attempt to fetch via a static path:
-        if isinstance(ds, str) and ds.lower().endswith(".csv"):
-            # First try backend summary endpoint using filename as identifier (some backends support this)
-            # Fallback: try to fetch a public sample JSON path if present in samples folder
-            try:
-                # Try numeric id first if ds is numeric-like
-                if str(ds).isdigit():
-                    self._start_thread(get_summary, _on_done, _on_err, int(ds))
-                else:
-                    # try as string id (some backends accept filenames)
-                    self._start_thread(get_summary, _on_done, _on_err, ds)
-            except Exception as e:
-                self.progress.setVisible(False)
-                QMessageBox.critical(self, "Error", str(e))
-            return
-
-        # otherwise call summary using ds
         self._start_thread(get_summary, _on_done, _on_err, ds)
 
     # -----------------
-    # File handling (CSV load in background)
+    # File handling
     # -----------------
     def choose_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select CSV", ".", "CSV Files (*.csv)")
@@ -390,48 +440,32 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "Sample missing", f"Sample CSV not found at {SAMPLE_CSV_PATH}")
             return
         self.lbl_file.setText(str(SAMPLE_CSV_PATH))
-        # load CSV in a background thread (avoids blocking GUI/painting)
-        def _on_done(df):
-            try:
-                preview = df.head(200).copy()
-                self.current_df = preview
-                self.table_model.setDataFrame(preview)
-                numeric_cols = preview.select_dtypes(include="number").columns.tolist()
-                self.combo_y.clear()
-                self.combo_y.addItems(numeric_cols)
-                self.current_summary = None
-            except Exception as e:
-                QMessageBox.critical(self, "CSV load error", str(e))
-
-        def _on_err(exc):
-            tb = getattr(exc, "_traceback", "")
-            QMessageBox.critical(self, "CSV read failed", f"{str(exc)}\n\n{tb}")
-
-        self._start_thread(_read_csv_sync, _on_done, _on_err, str(SAMPLE_CSV_PATH))
+        self._start_thread(_read_csv_sync, self._on_csv_read_done, self._on_csv_read_err, str(SAMPLE_CSV_PATH))
 
     def load_csv_preview(self, path):
         if not os.path.exists(path):
             QMessageBox.warning(self, "File missing", f"File not found: {path}")
             return
         self.lbl_file.setText(path)
+        self._start_thread(_read_csv_sync, self._on_csv_read_done, self._on_csv_read_err, path)
 
-        def _on_done(df):
-            try:
-                preview = df.head(200).copy()
-                self.current_df = preview
-                self.table_model.setDataFrame(preview)
-                numeric_cols = preview.select_dtypes(include="number").columns.tolist()
-                self.combo_y.clear()
-                self.combo_y.addItems(numeric_cols)
-                self.current_summary = None
-            except Exception as e:
-                QMessageBox.critical(self, "CSV load error", str(e))
+    def _on_csv_read_done(self, df):
+        try:
+            preview = df.head(200).copy()
+            self.current_df = preview
+            self.table_model.setDataFrame(preview)
+            numeric_cols = preview.select_dtypes(include="number").columns.tolist()
+            self.combo_y.clear()
+            self.combo_y.addItems(numeric_cols)
+            self.current_summary = None
+            # update KPI
+            self.update_kpis(dataset_label=os.path.basename(self.lbl_file.text()), rows=len(df), cols=len(df.columns), numeric=numeric_cols)
+        except Exception as e:
+            QMessageBox.critical(self, "CSV load error", str(e))
 
-        def _on_err(exc):
-            tb = getattr(exc, "_traceback", "")
-            QMessageBox.critical(self, "CSV read failed", f"{str(exc)}\n\n{tb}")
-
-        self._start_thread(_read_csv_sync, _on_done, _on_err, path)
+    def _on_csv_read_err(self, exc):
+        tb = getattr(exc, "_traceback", "")
+        QMessageBox.critical(self, "CSV read failed", f"{str(exc)}\n\n{tb}")
 
     # -----------------
     # Upload
@@ -480,7 +514,7 @@ class MainWindow(QWidget):
         self.progress.setValue(20)
 
     # -----------------
-    # Apply summary
+    # Apply summary + update KPI
     # -----------------
     def apply_summary(self, summary):
         self.current_summary = summary
@@ -497,8 +531,24 @@ class MainWindow(QWidget):
             numeric = self.current_df.select_dtypes(include="number").columns.tolist()
         self.combo_y.clear()
         self.combo_y.addItems(numeric)
-        self.tabs.setCurrentWidget(self.tab_preview)
+        self.tabs.setCurrentWidget(self.tab_preview) if hasattr(self, "tabs") else None
+
+        # update KPI card
+        ds_label = summary.get("original_filename") or str(summary.get("dataset_id") or "—")
+        total_rows = summary.get("rows") or (len(self.current_df) if self.current_df is not None else 0)
+        total_cols = len(summary.get("columns") or (list(self.current_df.columns) if self.current_df is not None else []))
+        numeric_list = numeric or []
+        self.update_kpis(dataset_label=ds_label, rows=total_rows, cols=total_cols, numeric=numeric_list)
+
         QMessageBox.information(self, "Summary loaded", f"Loaded summary for {summary.get('dataset_id')}")
+
+    def update_kpis(self, dataset_label="—", rows=0, cols=0, numeric=None):
+        self.kpi_dataset.setText(f"<b>Dataset:</b> {dataset_label}")
+        self.kpi_rows.setText(f"<b>Rows:</b> {rows}")
+        self.kpi_cols.setText(f"<b>Columns:</b> {cols}")
+        numeric = numeric or []
+        ntext = ", ".join(numeric[:5]) + (", ..." if len(numeric) > 5 else "") if numeric else "—"
+        self.kpi_numeric.setText(f"<b>Numeric:</b> {ntext}")
 
     # -----------------
     # Plotting
@@ -528,7 +578,6 @@ class MainWindow(QWidget):
         ax.set_xlabel("Index")
         ax.set_ylabel(ycol)
         try:
-            # use draw_idle to let Qt schedule paint safely
             self.canvas.draw_idle()
         except Exception:
             try:
@@ -537,7 +586,7 @@ class MainWindow(QWidget):
                 print("Plot draw error:", e)
 
     # -----------------
-    # Report download (robust resolver + auto-upload fallback)
+    # Report download (keeps your robust resolver & auto-upload fallback)
     # -----------------
     def generate_report(self):
         if not self.current_summary:
@@ -551,107 +600,70 @@ class MainWindow(QWidget):
         def try_extract_id_from_url(url):
             if not url or not isinstance(url, str):
                 return None
-            # try several patterns that may appear in your API responses
-            # e.g. "/api/datasets/23/summary/" or "/media/datasets/1/abc.csv"
             m = re.search(r"/api/datasets/(\d+)[/|$]", url)
             if m:
                 return int(m.group(1))
             m2 = re.search(r"/datasets/(\d+)[/|$]", url)
             if m2:
                 return int(m2.group(1))
-            # sometimes file urls include owner folder: /media/datasets/1/....csv (1 is owner, not dataset id) - skip those
             return None
 
         def resolve_dataset_id(summary):
-            # 1) prefer numeric id field
             did = summary.get("id")
             if isinstance(did, int):
-                print("resolve: using summary['id']:", did)
                 return did
-
-            # 2) numeric dataset_id string
             dsid = summary.get("dataset_id")
             if isinstance(dsid, str) and dsid.isdigit():
-                print("resolve: using numeric dataset_id str:", dsid)
                 return int(dsid)
-
-            # 3) if summary contains direct file/url fields, try extract
             for key in ("file", "file_url", "url", "summary_url"):
                 val = summary.get(key)
                 if val:
                     ext = try_extract_id_from_url(val)
                     if ext:
-                        print(f"resolve: extracted id {ext} from summary[{key}]")
                         return ext
-
-            # 4) If summary.raw_preview contains file-like metadata in first row, try that
             rv = summary.get("raw_preview")
             if isinstance(rv, list) and rv:
                 row0 = rv[0]
-                # common keys
                 for k in ("file", "file_url", "url"):
                     if k in row0:
                         ext = try_extract_id_from_url(row0[k])
                         if ext:
-                            print(f"resolve: extracted id {ext} from raw_preview[0][{k}]")
                             return ext
-
-            # 5) fallback: try history lookup (local cached via get_history)
             try:
                 hist = get_history()
                 if isinstance(hist, list):
-                    name_candidates = [summary.get("original_filename"), summary.get("dataset_id")]
                     for entry in hist:
                         if not entry:
                             continue
-                        # direct id present in history
                         if entry.get("id") and (entry.get("original_filename") == summary.get("original_filename") or entry.get("original_filename") == summary.get("dataset_id")):
-                            print("resolve: found id in history by original_filename:", entry.get("id"))
                             return entry.get("id")
-                        # match by original_filename
                         if summary.get("original_filename") and entry.get("original_filename") == summary.get("original_filename"):
-                            print("resolve: matched history original_filename:", entry.get("id"))
                             return entry.get("id")
-                        # match by filename at end of file url
                         fname = summary.get("dataset_id") or summary.get("original_filename")
                         if fname and entry.get("file") and entry["file"].endswith(fname):
-                            print("resolve: matched history file endswith filename:", entry.get("id"))
                             return entry.get("id")
-                        # match if history dataset_id matches the summary value
                         if entry.get("dataset_id") and entry.get("dataset_id") == summary.get("dataset_id"):
-                            print("resolve: matched history dataset_id:", entry.get("id"))
                             return entry.get("id")
-            except Exception as e:
-                print("resolve: history lookup failed:", e)
-
+            except Exception:
+                pass
             return None
 
-        # Try to resolve
         dataset_id = resolve_dataset_id(self.current_summary)
 
-        # Auto-upload fallback: if we couldn't resolve but a local file is loaded in UI, upload it now
         if not dataset_id:
             local_path = None
             try:
-                # label contains path text (your UI sets it when file chosen or sample loaded)
                 local_path = self.lbl_file.text()
                 if local_path and os.path.exists(local_path):
-                    print("generate_report: attempting auto-upload of", local_path)
                     self.progress.setValue(15)
-
-                    # run upload in background and continue when done
                     def _after_upload(res):
-                        # res expected to be dict containing dataset_id (numeric) or id
                         self.progress.setValue(60)
                         new_id = None
                         if isinstance(res, dict):
                             new_id = res.get("dataset_id") or res.get("id")
-                            # sometimes upload returns string id
                             if isinstance(new_id, str) and new_id.isdigit():
                                 new_id = int(new_id)
                         if new_id:
-                            print("generate_report: upload returned dataset id", new_id)
-                            # now call download in background
                             def _done_report(p):
                                 self.progress.setVisible(False)
                                 if not p or not os.path.exists(p):
@@ -666,36 +678,24 @@ class MainWindow(QWidget):
                             def _err_report(exc):
                                 self.progress.setVisible(False)
                                 QMessageBox.critical(self, "Report error", f"{str(exc)}\n\n{getattr(exc,'_traceback','')}")
-                            # start download thread
-                            try:
-                                self._start_thread(download_report, _done_report, _err_report, new_id)
-                            except Exception:
-                                run_in_thread(download_report, _done_report, _err_report, new_id)
+
+                            self._start_thread(download_report, _done_report, _err_report, new_id)
                         else:
                             self.progress.setVisible(False)
                             QMessageBox.warning(self, "Report", "Auto-upload succeeded but backend did not return dataset id.")
-                    # start upload thread
-                    try:
-                        self._start_thread(upload_file, _after_upload, lambda e: (self.progress.setVisible(False), QMessageBox.critical(self, "Upload error", str(e))), local_path)
-                    except Exception:
-                        run_in_thread(upload_file, _after_upload, lambda e: (self.progress.setVisible(False), QMessageBox.critical(self, "Upload error", str(e))), local_path)
+                    self._start_thread(upload_file, _after_upload, lambda e: (self.progress.setVisible(False), QMessageBox.critical(self, "Upload error", str(e))), local_path)
                     return
-                else:
-                    print("generate_report: no local file available to auto-upload (lbl_file text):", local_path)
-            except Exception as exc:
-                print("generate_report: auto-upload check failed:", exc)
+            except Exception:
+                pass
 
-        # If still no id, fail with helpful debug message
         if not dataset_id:
             self.progress.setVisible(False)
             debug_msg = "Could not determine dataset id for report.\n\n"
             debug_msg += "Summary keys: " + ", ".join(list(self.current_summary.keys())) + "\n"
             debug_msg += "Try: load dataset from History or Upload the CSV first.\n"
-            print(debug_msg)
             QMessageBox.critical(self, "Report", debug_msg)
             return
 
-        # Normal path: download report by numeric id
         def _on_done(out_path):
             self.progress.setVisible(False)
             if not out_path or not os.path.exists(out_path):
@@ -711,30 +711,39 @@ class MainWindow(QWidget):
             self.progress.setVisible(False)
             QMessageBox.critical(self, "Report error", f"{str(exc)}\n\n{getattr(exc,'_traceback','')}")
 
-        # start background report download
-        try:
-            self._start_thread(download_report, _on_done, _on_err, dataset_id)
-        except Exception:
-            run_in_thread(download_report, _on_done, _on_err, dataset_id)
+        self._start_thread(download_report, _on_done, _on_err, dataset_id)
 
-
-   
-   
     # -----------------
     # Safe cleanup on close
     # -----------------
     def closeEvent(self, event):
-        # Request threads to quit but do not block (cleanup happens in thread.finished)
         try:
             for th in list(self.threads):
                 try:
-                    th.quit()
+                    running = False
+                    try:
+                        running = th.isRunning()
+                    except Exception:
+                        running = False
+                    if running:
+                        try:
+                            th.quit()
+                        except Exception:
+                            pass
+                        try:
+                            th.wait(2000)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            th.quit()
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # close Matplotlib canvas safely
         try:
             if hasattr(self, "canvas") and self.canvas is not None:
                 try:
