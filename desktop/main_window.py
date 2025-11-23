@@ -537,7 +537,7 @@ class MainWindow(QWidget):
                 print("Plot draw error:", e)
 
     # -----------------
-    # Report download
+    # Report download (robust resolver + auto-upload fallback)
     # -----------------
     def generate_report(self):
         if not self.current_summary:
@@ -547,6 +547,155 @@ class MainWindow(QWidget):
         self.progress.setVisible(True)
         self.progress.setValue(5)
 
+        import re
+        def try_extract_id_from_url(url):
+            if not url or not isinstance(url, str):
+                return None
+            # try several patterns that may appear in your API responses
+            # e.g. "/api/datasets/23/summary/" or "/media/datasets/1/abc.csv"
+            m = re.search(r"/api/datasets/(\d+)[/|$]", url)
+            if m:
+                return int(m.group(1))
+            m2 = re.search(r"/datasets/(\d+)[/|$]", url)
+            if m2:
+                return int(m2.group(1))
+            # sometimes file urls include owner folder: /media/datasets/1/....csv (1 is owner, not dataset id) - skip those
+            return None
+
+        def resolve_dataset_id(summary):
+            # 1) prefer numeric id field
+            did = summary.get("id")
+            if isinstance(did, int):
+                print("resolve: using summary['id']:", did)
+                return did
+
+            # 2) numeric dataset_id string
+            dsid = summary.get("dataset_id")
+            if isinstance(dsid, str) and dsid.isdigit():
+                print("resolve: using numeric dataset_id str:", dsid)
+                return int(dsid)
+
+            # 3) if summary contains direct file/url fields, try extract
+            for key in ("file", "file_url", "url", "summary_url"):
+                val = summary.get(key)
+                if val:
+                    ext = try_extract_id_from_url(val)
+                    if ext:
+                        print(f"resolve: extracted id {ext} from summary[{key}]")
+                        return ext
+
+            # 4) If summary.raw_preview contains file-like metadata in first row, try that
+            rv = summary.get("raw_preview")
+            if isinstance(rv, list) and rv:
+                row0 = rv[0]
+                # common keys
+                for k in ("file", "file_url", "url"):
+                    if k in row0:
+                        ext = try_extract_id_from_url(row0[k])
+                        if ext:
+                            print(f"resolve: extracted id {ext} from raw_preview[0][{k}]")
+                            return ext
+
+            # 5) fallback: try history lookup (local cached via get_history)
+            try:
+                hist = get_history()
+                if isinstance(hist, list):
+                    name_candidates = [summary.get("original_filename"), summary.get("dataset_id")]
+                    for entry in hist:
+                        if not entry:
+                            continue
+                        # direct id present in history
+                        if entry.get("id") and (entry.get("original_filename") == summary.get("original_filename") or entry.get("original_filename") == summary.get("dataset_id")):
+                            print("resolve: found id in history by original_filename:", entry.get("id"))
+                            return entry.get("id")
+                        # match by original_filename
+                        if summary.get("original_filename") and entry.get("original_filename") == summary.get("original_filename"):
+                            print("resolve: matched history original_filename:", entry.get("id"))
+                            return entry.get("id")
+                        # match by filename at end of file url
+                        fname = summary.get("dataset_id") or summary.get("original_filename")
+                        if fname and entry.get("file") and entry["file"].endswith(fname):
+                            print("resolve: matched history file endswith filename:", entry.get("id"))
+                            return entry.get("id")
+                        # match if history dataset_id matches the summary value
+                        if entry.get("dataset_id") and entry.get("dataset_id") == summary.get("dataset_id"):
+                            print("resolve: matched history dataset_id:", entry.get("id"))
+                            return entry.get("id")
+            except Exception as e:
+                print("resolve: history lookup failed:", e)
+
+            return None
+
+        # Try to resolve
+        dataset_id = resolve_dataset_id(self.current_summary)
+
+        # Auto-upload fallback: if we couldn't resolve but a local file is loaded in UI, upload it now
+        if not dataset_id:
+            local_path = None
+            try:
+                # label contains path text (your UI sets it when file chosen or sample loaded)
+                local_path = self.lbl_file.text()
+                if local_path and os.path.exists(local_path):
+                    print("generate_report: attempting auto-upload of", local_path)
+                    self.progress.setValue(15)
+
+                    # run upload in background and continue when done
+                    def _after_upload(res):
+                        # res expected to be dict containing dataset_id (numeric) or id
+                        self.progress.setValue(60)
+                        new_id = None
+                        if isinstance(res, dict):
+                            new_id = res.get("dataset_id") or res.get("id")
+                            # sometimes upload returns string id
+                            if isinstance(new_id, str) and new_id.isdigit():
+                                new_id = int(new_id)
+                        if new_id:
+                            print("generate_report: upload returned dataset id", new_id)
+                            # now call download in background
+                            def _done_report(p):
+                                self.progress.setVisible(False)
+                                if not p or not os.path.exists(p):
+                                    QMessageBox.warning(self, "Report", "Failed to download report after upload.")
+                                    return
+                                try:
+                                    webbrowser.open_new(f"file://{p}")
+                                    QMessageBox.information(self, "Report", f"Opened report: {p}")
+                                except Exception as e:
+                                    QMessageBox.information(self, "Report saved", f"Report saved at {p}\n{e}")
+
+                            def _err_report(exc):
+                                self.progress.setVisible(False)
+                                QMessageBox.critical(self, "Report error", f"{str(exc)}\n\n{getattr(exc,'_traceback','')}")
+                            # start download thread
+                            try:
+                                self._start_thread(download_report, _done_report, _err_report, new_id)
+                            except Exception:
+                                run_in_thread(download_report, _done_report, _err_report, new_id)
+                        else:
+                            self.progress.setVisible(False)
+                            QMessageBox.warning(self, "Report", "Auto-upload succeeded but backend did not return dataset id.")
+                    # start upload thread
+                    try:
+                        self._start_thread(upload_file, _after_upload, lambda e: (self.progress.setVisible(False), QMessageBox.critical(self, "Upload error", str(e))), local_path)
+                    except Exception:
+                        run_in_thread(upload_file, _after_upload, lambda e: (self.progress.setVisible(False), QMessageBox.critical(self, "Upload error", str(e))), local_path)
+                    return
+                else:
+                    print("generate_report: no local file available to auto-upload (lbl_file text):", local_path)
+            except Exception as exc:
+                print("generate_report: auto-upload check failed:", exc)
+
+        # If still no id, fail with helpful debug message
+        if not dataset_id:
+            self.progress.setVisible(False)
+            debug_msg = "Could not determine dataset id for report.\n\n"
+            debug_msg += "Summary keys: " + ", ".join(list(self.current_summary.keys())) + "\n"
+            debug_msg += "Try: load dataset from History or Upload the CSV first.\n"
+            print(debug_msg)
+            QMessageBox.critical(self, "Report", debug_msg)
+            return
+
+        # Normal path: download report by numeric id
         def _on_done(out_path):
             self.progress.setVisible(False)
             if not out_path or not os.path.exists(out_path):
@@ -562,9 +711,15 @@ class MainWindow(QWidget):
             self.progress.setVisible(False)
             QMessageBox.critical(self, "Report error", f"{str(exc)}\n\n{getattr(exc,'_traceback','')}")
 
-        dataset_id = self.current_summary.get("dataset_id")
-        self._start_thread(download_report, _on_done, _on_err, dataset_id)
+        # start background report download
+        try:
+            self._start_thread(download_report, _on_done, _on_err, dataset_id)
+        except Exception:
+            run_in_thread(download_report, _on_done, _on_err, dataset_id)
 
+
+   
+   
     # -----------------
     # Safe cleanup on close
     # -----------------
