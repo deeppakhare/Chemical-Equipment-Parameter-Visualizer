@@ -4,16 +4,6 @@ import { uploadMock, getSummaryMock } from "../api/mockServer";
 import Papa from "papaparse";
 import client from "../api/client";
 
-/**
- * Upload component:
- * - Shows small client-side preview (previewRows)
- * - When uploading:
- *    - if Authorization token is present in axios client, call real backend via uploadFile()
- *    - otherwise call uploadMock()
- * - After upload, parse the full selected CSV file client-side and attach full rows
- *   to summary.raw_preview so the UI immediately shows the whole file.
- */
-
 export default function Upload({ onSummary }) {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -23,7 +13,6 @@ export default function Upload({ onSummary }) {
     const f = e.target.files[0];
     setFile(f);
     if (f) {
-      // quick client-side preview using PapaParse (first 10 rows)
       Papa.parse(f, {
         header: true,
         preview: 10,
@@ -37,23 +26,20 @@ export default function Upload({ onSummary }) {
     }
   }
 
-  // use the real backend upload via axios client
   async function uploadFileToBackend(fileObj) {
     const fd = new FormData();
     fd.append("file", fileObj);
     const resp = await client.post("/api/datasets/upload/", fd, {
       headers: { "Content-Type": "multipart/form-data" }
     });
-    return resp.data; // { dataset_id, summary_url, history_url }
+    return resp.data;
   }
 
-  // helper: parse full CSV file (File object) into array of row objects
   function parseFullCsvFile(fileObj) {
     return new Promise((resolve, reject) => {
       Papa.parse(fileObj, {
         header: true,
         skipEmptyLines: true,
-        worker: false,
         complete: (results) => resolve(results.data || []),
         error: (err) => reject(err)
       });
@@ -64,7 +50,6 @@ export default function Upload({ onSummary }) {
     if (!file) return alert("Choose a CSV file first");
     setLoading(true);
     try {
-      // choose real upload when an Authorization header (Token) is set on client
       const hasAuth = !!client.defaults.headers.common["Authorization"];
       let uploadResp;
       if (hasAuth) {
@@ -78,19 +63,14 @@ export default function Upload({ onSummary }) {
         uploadResp = await uploadMock(file);
       }
 
-      // get summary (either via summary_url returned by backend or fallback)
       const summary = await getSummaryMock(uploadResp.summary_url || uploadResp.dataset_id);
 
-      // If the user selected a local file, parse the full CSV client-side and attach full rows
-      // This ensures DataTable shows the full CSV immediately after upload
       if (file instanceof File) {
         try {
           const fullRows = await parseFullCsvFile(file);
           if (fullRows && fullRows.length) {
             summary.raw_preview = fullRows;
-            // update summary.rows if missing or smaller
             summary.rows = Math.max(summary.rows || 0, fullRows.length);
-            // recompute numeric_columns if missing
             if (!summary.numeric_columns || summary.numeric_columns.length === 0) {
               const sampleRow = fullRows[0] || {};
               const numericCols = Object.keys(sampleRow).filter((k) => {
@@ -105,7 +85,6 @@ export default function Upload({ onSummary }) {
         }
       }
 
-      // finally pass summary to parent
       onSummary(summary);
     } catch (err) {
       console.error(err);
@@ -116,26 +95,42 @@ export default function Upload({ onSummary }) {
   }
 
   return (
-    <div style={{ border: "1px solid #e2e8f0", padding: 12, borderRadius: 8 }}>
-      <h3>Upload CSV (mock)</h3>
-      <input type="file" accept=".csv" onChange={onFileChange} />
-      <div style={{ marginTop: 8 }}>
-        <button onClick={doUpload} disabled={loading} style={{ padding: "8px 12px" }}>
-          {loading ? "Uploading…" : "Upload CSV"}
-        </button>
+    <div>
+      <div className="upload-area">
+        <div className="upload-left">
+          <div style={{ fontWeight: 700 }}>Upload CSV</div>
+          <div className="u-meta">Supported: comma-separated CSV with header row</div>
+          <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+            <input type="file" accept=".csv" onChange={onFileChange} />
+            <button className="btn small" onClick={doUpload} disabled={loading}>
+              {loading ? "Uploading…" : "Upload"}
+            </button>
+            <button
+              className="btn secondary small"
+              onClick={() => {
+                setFile(null);
+                setPreviewRows(null);
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+        <div style={{ width: 160, textAlign: "right" }}>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Selected</div>
+          <div style={{ fontWeight: 700 }}>{file ? file.name : "No file"}</div>
+        </div>
       </div>
 
       {previewRows && (
-        <div style={{ marginTop: 12 }}>
-          <h4>Preview (first {previewRows.length} rows)</h4>
-          <div style={{ maxHeight: 160, overflow: "auto", border: "1px solid #f0f0f0" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <div className="preview-wrap">
+          <h4 style={{ marginTop: 12 }}>Preview (first {previewRows.length} rows)</h4>
+          <div className="table-scroll">
+            <table className="table">
               <thead>
                 <tr>
                   {Object.keys(previewRows[0] || {}).map((c) => (
-                    <th key={c} style={{ textAlign: "left", padding: 6, borderBottom: "1px solid #eee" }}>
-                      {c}
-                    </th>
+                    <th key={c}>{c}</th>
                   ))}
                 </tr>
               </thead>
@@ -143,9 +138,7 @@ export default function Upload({ onSummary }) {
                 {previewRows.map((r, i) => (
                   <tr key={i}>
                     {Object.values(r).map((v, j) => (
-                      <td key={j} style={{ padding: 6, borderBottom: "1px solid #fafafa" }}>
-                        {v}
-                      </td>
+                      <td key={j}>{v}</td>
                     ))}
                   </tr>
                 ))}

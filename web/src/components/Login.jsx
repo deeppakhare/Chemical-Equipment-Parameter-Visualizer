@@ -12,7 +12,6 @@ export default function Login() {
     e.preventDefault();
     setBusy(true);
     try {
-      // DRF obtain_auth_token expects form-encoded or JSON; we'll send JSON
       const res = await client.post("/api-token-auth/", { username, password });
       const token = res.data.token;
       if (!token) throw new Error("No token returned");
@@ -20,17 +19,42 @@ export default function Login() {
       alert("Logged in (token saved).");
     } catch (err) {
       console.error(err);
-      alert("Login failed");
+      alert("Login failed: " + (err.response?.data || err.message || err));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <form onSubmit={submit} style={{maxWidth:420}}>
-      <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username" required />
-      <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" type="password" required />
-      <button type="submit" disabled={busy}>{busy ? "Logging in..." : "Login"}</button>
+    <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <label style={{ textAlign: "left", fontSize: 13, color: "var(--muted)" }}>Username</label>
+      <input
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        placeholder="username"
+        required
+      />
+      <label style={{ textAlign: "left", fontSize: 13, color: "var(--muted)" }}>Password</label>
+      <input
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="password"
+        type="password"
+        required
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        <button className="btn" type="submit" disabled={busy}>{busy ? "Logging in..." : "Login"}</button>
+        <button
+          type="button"
+          className="btn secondary"
+          onClick={() => {
+            setUsername("demo");
+            setPassword("demo");
+          }}
+        >
+          Fill demo
+        </button>
+      </div>
     </form>
   );
 }
